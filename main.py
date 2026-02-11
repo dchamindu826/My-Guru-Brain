@@ -1,30 +1,32 @@
 from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel
-from supabase import create_client
-import google.generativeai as genai
+from supabase import create_client, Client
+from google import genai # 🔥 අලුත් Library එක
+from dotenv import load_dotenv
 import os
 import re
 import time
 import json
-from dotenv import load_dotenv
-from typing import Optional
 
-# Load Env
+# --- SETUP ---
 load_dotenv()
-
 app = FastAPI(title="My Guru Brain API")
 
-# --- CONFIG (ඔයාගේ Keys ටික .env එකෙන් ගනී) ---
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+# --- CONFIGURATION CHECK ---
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip() # Strip spaces
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
 
+if not SUPABASE_URL or not SUPABASE_KEY or not GOOGLE_API_KEY:
+    print("❌ Critical Error: Keys missing in .env file")
+
+# Initialize Clients
 try:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    genai.configure(api_key=GOOGLE_API_KEY)
-    client = genai.Client(api_key=GOOGLE_API_KEY) # ඔයාගේ code එකේ විදියටම
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    # 🔥 Streamlit Code එකේ තිබ්බ විදියටම Client හදනවා
+    client = genai.Client(api_key=GOOGLE_API_KEY)
 except Exception as e:
-    print(f"Config Error: {e}")
+    print(f"❌ Initialization Error: {e}")
 
 # --- DATA MODELS ---
 class ChatRequest(BaseModel):
@@ -33,7 +35,7 @@ class ChatRequest(BaseModel):
     medium: str
 
 # ==========================================
-# 👇 YOUR ORIGINAL LOGIC FUNCTIONS (NO CHANGE)
+# 👇 CORE LOGIC (From Streamlit Code)
 # ==========================================
 
 def clean_json_text(text):
@@ -46,7 +48,7 @@ def clean_json_text(text):
 def safe_google_api_call(contents, config=None, retries=3):
     for attempt in range(retries):
         try:
-            # Gemini 2.0 Flash Model එකමයි පාවිච්චි කරන්නේ
+            # 🔥 Streamlit Code එකේ Logic එකමයි (gemini-2.0-flash)
             if config:
                 return client.models.generate_content(model='gemini-2.0-flash', contents=contents, config=config)
             else:
@@ -55,10 +57,12 @@ def safe_google_api_call(contents, config=None, retries=3):
             if "429" in str(e):
                 time.sleep((attempt + 1) * 2)
                 continue
+            print(f"Gemini Error: {e}")
             return None
     return None
 
 def identify_best_figure_id(context_items, user_question, ai_answer):
+    # 1. Fast Regex Check on Answer
     if ai_answer:
         match = re.search(r"(\d+\.\d+)", ai_answer)
         if match:
@@ -176,7 +180,7 @@ def generate_final_answer(context_items, user_question, subject, medium):
     return res.text if res else "System busy. Please try again."
 
 # ==========================================
-# 🚀 API ENDPOINT (The Bridge)
+# 🚀 API ENDPOINTS
 # ==========================================
 
 async def verify_api_key(x_api_key: str = Header(...)):
